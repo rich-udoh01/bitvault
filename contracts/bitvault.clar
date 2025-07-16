@@ -229,3 +229,52 @@
     )
   )
 )
+
+;; LIQUIDATION ENGINE
+
+;; Liquidate undercollateralized positions
+(define-public (liquidate (user principal))
+  (let (
+      (user-pos (unwrap! (map-get? user-positions { user: user }) ERR-LOAN-NOT-FOUND))
+      (collateral (get total-collateral user-pos))
+      (borrowed (get total-borrowed user-pos))
+      (ratio (get-collateral-ratio collateral borrowed))
+    )
+    (asserts! (not (is-eq user tx-sender)) ERR-NOT-AUTHORIZED)
+    (asserts! (> borrowed u0) ERR-INVALID-AMOUNT)
+    (if (< ratio (var-get liquidation-threshold))
+      (begin
+        (try! (as-contract (stx-transfer? collateral (as-contract tx-sender) tx-sender)))
+        (map-delete user-positions { user: user })
+        (var-set total-deposits (- (var-get total-deposits) collateral))
+        (var-set total-borrows (- (var-get total-borrows) borrowed))
+        (ok true)
+      )
+      ERR-LIQUIDATION-FAILED
+    )
+  )
+)
+
+;; READ-ONLY QUERY FUNCTIONS
+
+;; Get user's complete position information
+(define-read-only (get-user-position (user principal))
+  (default-to {
+    total-collateral: u0,
+    total-borrowed: u0,
+    loan-count: u0,
+  }
+    (map-get? user-positions { user: user })
+  )
+)
+
+;; Get comprehensive protocol statistics
+(define-read-only (get-protocol-stats)
+  {
+    total-deposits: (var-get total-deposits),
+    total-borrows: (var-get total-borrows),
+    minimum-collateral-ratio: (var-get minimum-collateral-ratio),
+    liquidation-threshold: (var-get liquidation-threshold),
+    protocol-fee: (var-get protocol-fee),
+  }
+)
