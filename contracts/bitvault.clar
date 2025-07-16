@@ -84,3 +84,64 @@
     total-interest
   )
 )
+
+;; Calculate health ratio of collateral vs debt
+(define-private (get-collateral-ratio
+    (collateral uint)
+    (debt uint)
+  )
+  (if (is-eq debt u0)
+    u0
+    (/ (* collateral u100) debt)
+  )
+)
+
+;; Update user position data atomically
+(define-private (update-user-position
+    (user principal)
+    (collateral-delta uint)
+    (is-collateral-increase bool)
+    (borrow-delta uint)
+    (is-borrow-increase bool)
+  )
+  (let (
+      (current-position (default-to {
+        total-collateral: u0,
+        total-borrowed: u0,
+        loan-count: u0,
+      }
+        (map-get? user-positions { user: user })
+      ))
+      (new-collateral (if is-collateral-increase
+        (+ (get total-collateral current-position) collateral-delta)
+        (- (get total-collateral current-position) collateral-delta)
+      ))
+      (new-borrowed (if is-borrow-increase
+        (+ (get total-borrowed current-position) borrow-delta)
+        (- (get total-borrowed current-position) borrow-delta)
+      ))
+    )
+    (map-set user-positions { user: user } {
+      total-collateral: new-collateral,
+      total-borrowed: new-borrowed,
+      loan-count: (get loan-count current-position),
+    })
+  )
+)
+
+;; CORE PROTOCOL OPERATIONS
+
+;; Deposit STX as collateral to enable borrowing
+(define-public (deposit)
+  (let ((amount (stx-get-balance tx-sender)))
+    (if (> amount u0)
+      (begin
+        (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+        (var-set total-deposits (+ (var-get total-deposits) amount))
+        (update-user-position tx-sender amount true u0 true)
+        (ok amount)
+      )
+      ERR-INVALID-AMOUNT
+    )
+  )
+)
